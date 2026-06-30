@@ -21,10 +21,12 @@ public class CompressedBlock {
         if (headerMagic != 0x1015FA9957FBAA37) {
             throw new Exception("Unsupported compressed block format");
         }
+
         var version = reader.ReadUInt16();
         if (version >= 4) {
             throw new Exception("Unsupported compressed block version");
         }
+
         var compressionAlgo = reader.ReadByte();
         if (compressionAlgo >= 17) {
             throw new Exception("Unsupported compression algorithm");
@@ -42,15 +44,12 @@ public class CompressedBlock {
             totalDecompressed += chunks[i].decompressedLength;
         }
 
-        Console.WriteLine($"Decompressing {numChunks} chunks, total decompressed size: {totalDecompressed} bytes");
-
         var block = new CompressedBlock {
             Data = new MemoryStream((int)totalDecompressed)
         };
 
         foreach (var chunk in chunks) {
             chunk.checksum = reader.ReadUInt32();
-
             var compressed = reader.ReadBytes((int)chunk.compressedLength);
             if (chunk.compressedLength != chunk.decompressedLength) {
                 var raw = new byte[chunk.decompressedLength];
@@ -63,6 +62,9 @@ public class CompressedBlock {
                 block.Data.Write(compressed, 0, compressed.Length);
             }
         }
+
+        // reset for reading
+        block.Data.Seek(0, SeekOrigin.Begin);
 
         return block;
     }

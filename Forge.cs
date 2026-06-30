@@ -84,16 +84,16 @@ public class Forge : IDisposable {
         return forge;
     }
 
-    public FatFile GetFile(ulong uid) {
+    public FatFile GetFatFile(ulong uid) {
         if (Files.TryGetValue(uid, out var file)) {
             return file;
         }
         throw new Exception($"File with UID {uid} not found.");
     }
-    public CompressedBlock ExtractFile(ulong uid) {
-        var file = GetFile(uid);
+    public Container GetContainer(ulong uid) {
+        var file = GetFatFile(uid);
         _reader.BaseStream.Seek((long)file.offset, SeekOrigin.Begin);
-        return CompressedBlock.Read(_reader);
+        return Container.Read(_reader);
     }
 
     public void Dispose() {
