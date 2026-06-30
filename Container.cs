@@ -12,12 +12,11 @@ public class ContainerEntry {
 public class Container {
 
     public Dictionary<ulong, ContainerEntry> Entries = new();
-    public CompressedBlock Body;
-    public MemoryStream Data => Body.Data;
+    public MemoryStream Body;
 
     public static Container Read(BinaryReader reader) {
         var header = CompressedBlock.Read(reader);
-        var headerReader = new BinaryReader(header.Data);
+        var headerReader = new BinaryReader(header.Decompress());
         var entriesCount = headerReader.ReadUInt32();
         int offset = 0;
         var container = new Container();
@@ -30,18 +29,19 @@ public class Container {
                 Offset = offset
             };
             offset += size;
+            Console.WriteLine($"Entry {i}: UID={uid}, Size={size}, Offset={entry.Offset}");
             container.Entries.Add(uid, entry);
         }
 
-        container.Body = CompressedBlock.Read(reader);
+        container.Body = CompressedBlock.Read(reader).Decompress();
         return container;
     }
 
-    public byte[] ExtractFile(uint uid) {
+    public byte[] ExtractFile(ulong uid) {
         var entry = Entries[uid];
         var data = new byte[entry.Size];
-        Data.Seek(entry.Offset, SeekOrigin.Begin);
-        Data.ReadExactly(data, 0, entry.Size);
+        Body.Seek(entry.Offset, SeekOrigin.Begin);
+        Body.ReadExactly(data, 0, entry.Size);
         return data;
     }
 }

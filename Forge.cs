@@ -60,19 +60,15 @@ public class Forge : IDisposable {
             for (int i = 0; i < desc.maxFile; i++) {
                 var file = FatFile.Read(_reader);
 
-                // Decrypt
+                // Seems useless
+                // Keeping for the sake of being right lol
                 if (Version >= 31) {
                     file.uid = BitOperations.RotateRight(file.uid + 0xAFADDBC7C7BBBC9C, (int)(file.offset % 62) + 1) ^ 0x3934394E23482361;
                 }
 
-                // Ignore metadata file, they are utterly useless anyways
-                // 16 = globalMetaKey, 3040 = "hash" file?
                 if (file.uid == (ulong)GlobalMetaKey || file.uid == 3040) {
                     continue;
                 }
-
-                Console.WriteLine("Indexed file: UID = {0}, Offset = {1}, Size = {2}", file.uid, file.offset, file.size);
-
                 Files[file.uid] = file;
             }
         }
@@ -90,6 +86,7 @@ public class Forge : IDisposable {
         }
         throw new Exception($"File with UID {uid} not found.");
     }
+
     public Container GetContainer(ulong uid) {
         var file = GetFatFile(uid);
         _reader.BaseStream.Seek((long)file.offset, SeekOrigin.Begin);

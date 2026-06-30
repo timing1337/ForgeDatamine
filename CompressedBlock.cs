@@ -1,20 +1,46 @@
+using System.Buffers.Binary;
+using ZstdSharp;
+
 namespace ForgeDatamine;
 
 public class ChunkedData {
-    public uint compressedLength;
-    public uint decompressedLength;
-    public uint checksum;
-
-    public static ChunkedData Read(BinaryReader reader) {
-        return new ChunkedData {
-            decompressedLength = reader.ReadUInt32(),
-            compressedLength = reader.ReadUInt32()
-        };
-    }
+    public int CompressedLength;
+    public int DecompressedLength;
+    public long Offset;
+    public uint Checksum;
 }
 
 public class CompressedBlock {
-    public MemoryStream Data = new();
+    private readonly BinaryReader _reader;
+    private readonly List<ChunkedData> _chunks;
+    private readonly int _blockSize;
+
+    public CompressedBlock(BinaryReader reader, int blockSize, List<ChunkedData> chunks) {
+        _reader = reader;
+        _chunks = chunks;
+        _blockSize = blockSize;
+    }
+
+    public MemoryStream Decompress() {
+        var stream = new MemoryStream();
+        foreach (var chunk in _chunks) {
+            bool isCompressed = chunk.CompressedLength != chunk.DecompressedLength;
+            _reader.BaseStream.Seek(chunk.Offset, SeekOrigin.Begin);
+            var data = _reader.ReadBytes(chunk.CompressedLength);
+            if (!isCompressed) {
+                stream.Write(data, 0, data.Length);
+            } else {
+                var raw = new byte[chunk.DecompressedLength];
+                var result = Oodle.Decompress(data, raw);
+                if (result != chunk.DecompressedLength) {
+                    throw new Exception("Decompression failed");
+                }
+                stream.Write(raw, 0, raw.Length);
+            }
+        }
+        stream.Seek(0, SeekOrigin.Begin);
+        return stream;
+    }
 
     public static CompressedBlock Read(BinaryReader reader) {
         var headerMagic = reader.ReadUInt64();
@@ -32,40 +58,27 @@ public class CompressedBlock {
             throw new Exception("Unsupported compression algorithm");
         }
 
-        // "Block size" ?
-        reader.ReadInt32();
+        var blockSize = reader.ReadInt32();
+        if (blockSize < 0) {
+            blockSize &= 0x7FFFFFFF;
+        }
 
         var numChunks = reader.ReadInt32();
-        var chunks = new ChunkedData[numChunks];
+        var chunks = new List<ChunkedData>(numChunks);
 
-        long totalDecompressed = 0;
         for (var i = 0; i < numChunks; i++) {
-            chunks[i] = ChunkedData.Read(reader);
-            totalDecompressed += chunks[i].decompressedLength;
+            chunks.Add(new ChunkedData {
+                DecompressedLength = reader.ReadInt32(),
+                CompressedLength = reader.ReadInt32()
+            });
         }
-
-        var block = new CompressedBlock {
-            Data = new MemoryStream((int)totalDecompressed)
-        };
 
         foreach (var chunk in chunks) {
-            chunk.checksum = reader.ReadUInt32();
-            var compressed = reader.ReadBytes((int)chunk.compressedLength);
-            if (chunk.compressedLength != chunk.decompressedLength) {
-                var raw = new byte[chunk.decompressedLength];
-                var result = Oodle.Decompress(compressed, raw);
-                if (result != chunk.decompressedLength) {
-                    throw new Exception("Decompression failed");
-                }
-                block.Data.Write(raw, 0, raw.Length);
-            } else {
-                block.Data.Write(compressed, 0, compressed.Length);
-            }
+            chunk.Checksum = reader.ReadUInt32();
+            chunk.Offset = reader.BaseStream.Position;
+            reader.BaseStream.Seek(chunk.CompressedLength, SeekOrigin.Current);
         }
 
-        // reset for reading
-        block.Data.Seek(0, SeekOrigin.Begin);
-
-        return block;
+        return new CompressedBlock(reader, blockSize, chunks);
     }
 }
